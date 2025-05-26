@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Mining Impact Map</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" />
+  <style>
+    body { margin: 0; display: flex; }
+    #map { height: 100vh; width: 75%; }
+    #info { width: 25%; padding: 10px; font-family: Arial; overflow-y: auto; }
+    .legend { margin-top: 10px; font-weight: bold; }
+    ul { margin: 5px 0; padding-left: 20px; }
+    li { margin: 2px 0; }
+    .leaflet-tooltip.mine-label {
+  background-color: white;
+  color: black;
+  font-weight: bold;
+  padding: 2px 6px;
+  border-radius: 4px;
+  box-shadow: 0 0 2px #0003;
+  font-size: 13px;
+}
+
+.leaflet-tooltip.mine-label.active {
+  background-color: darkblue;
+  color: white;
+}
+
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <div id="info">
+    <div id="summary" class="legend">Direct: 0 | Indirect: 0 | Unaffected: 0</div>
+    <div id="villageList">
+      <h3>Directly Affected Villages</h3>
+      <ul id="directList"></ul>
+      <h3>Indirectly Affected Villages</h3>
+      <ul id="indirectList"></ul>
+      <h3>Unaffected Villages</h3>
+<ul id="unaffectedList"></ul>
+
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
+  <script>
+    const map = L.map('map').setView([23.8, 86.4], 11);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+    const villageLayers = [];
+    const mineLayers = [];
+    const drawnCircles = [];
+    const affectedVillages = new Map(); // villageId -> status
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+
+const defaultMineIcon = L.icon({
+  iconUrl: 'images/coalafter.png',
+  iconSize: [25, 25],
+  iconAnchor: [12, 25],
+  popupAnchor: [0, -25]
+});
+
+const activeMineIcon = L.icon({
+  iconUrl: 'images/coalafter2.png',
+  iconSize: [30, 30],
+  iconAnchor: [15, 30],
+  popupAnchor: [0, -30]
+});
+
+
+    Promise.all([
+      fetch('district_Boundaries_geojson.json').then(res => res.json()),
+      fetch('village_geojson.json').then(res => res.json()),
+      fetch('mines_geojson.json').then(res => res.json())
+    ]).then(([districtGeojson, villageGeojson, mineGeojson]) => {
+
+      // District boundary
+      L.geoJSON(districtGeojson, {
+        style: {
+          color: '#000',
+          weight: 2,
+          fillOpacity: 0
+        }
+      }).addTo(map);
+
+      // Villages// Villages
+L.geoJSON(villageGeojson, {
+  onEachFeature: (feature, layer) => {
+    const name = feature.properties.name;
+    if (!name) {
+      console.warn("Unnamed village found", feature);
+    }
+    layer.villageId = Math.random().toString(36).substr(2, 9);
+    layer.villageName = name;
+    layer.setStyle({ color: '#333', fillColor: '#ccc', fillOpacity: 0.5 });
+
+    // Add hover event to show tooltip
+    layer.bindTooltip(name, {sticky: true, direction: "top"});
+
+    villageLayers.push(layer);
+  }
+}).addTo(map);
+
+      // Mines
+     let mIndex = 0;
+L.geoJSON(mineGeojson, {
+  pointToLayer: function (feature, latlng) {
+    const name = `Mine ${alphabet[mIndex++] || mIndex}`;
+    feature.properties.name = name;
+
+    const marker = L.marker(latlng, { icon: defaultMineIcon })
+      .bindPopup(name)
+      .bindTooltip(name, { 
+        permanent: true, 
+        direction: 'top', 
+        offset: [0, -10], 
+        className: 'mine-label' 
+      })
+      .on('click', function () {
+        if (!marker.clicked) {
+          marker.setIcon(activeMineIcon);
+          marker.clicked = true;
+        }
+
+        drawImpact(latlng);
+        updateVillageImpact();
+      });
+
+    mineLayers.push(marker);
+    return marker;
+  }
+}).addTo(map);
+
+});
+
+    function drawImpact(latlng) {
+      const direct = L.circle(latlng, {
+        radius: 15000,
+        color: 'red',
+        fillOpacity: 0.1
+      }).addTo(map);
+
+      const indirect = L.circle(latlng, {
+        radius: 25000,
+        color: 'yellow',
+        fillOpacity: 0.1
+      }).addTo(map);
+
+      drawnCircles.push({ direct, indirect });
+    }
+
+    function isInside(circle, polygon) {
+      const center = circle.getLatLng();
+      const radius = circle.getRadius();
+
+      const latlngs = polygon.getLatLngs();
+      // Handles both simple and multi-ring polygons
+      const allPoints = latlngs.flat(1);
+      return allPoints.some(latlng => center.distanceTo(latlng) <= radius);
+    }
+
+    function updateVillageImpact() {
+      affectedVillages.clear();
+
+      villageLayers.forEach(layer => {
+        let isDirect = false;
+        let isIndirect = false;
+
+        drawnCircles.forEach(({ direct, indirect }) => {
+          if (isInside(direct, layer)) isDirect = true;
+          else if (isInside(indirect, layer)) isIndirect = true;
+        });
+
+        if (isDirect) {
+          affectedVillages.set(layer.villageId, 'direct');
+          layer.setStyle({ fillColor: 'red', fillOpacity: 0.6 });
+        } else if (isIndirect) {
+          affectedVillages.set(layer.villageId, 'indirect');
+          layer.setStyle({ fillColor: 'yellow', fillOpacity: 0.6 });
+        } else {
+          layer.setStyle({ fillColor: '#ccc', fillOpacity: 0.4 });
+        }
+      });
+
+      updateSummaryAndList();
+    }
+function updateSummaryAndList() {
+  const total = villageLayers.length;
+  const directList = [];
+  const indirectList = [];
+  const unaffectedList = [];
+
+  villageLayers.forEach(layer => {
+    const status = affectedVillages.get(layer.villageId);
+    if (status === 'direct') {
+      directList.push(layer.villageName);
+    } else if (status === 'indirect') {
+      indirectList.push(layer.villageName);
+    } else {
+      unaffectedList.push(layer.villageName);
+    }
+  });
+
+  document.getElementById('summary').innerText =
+    `Direct: ${directList.length} | Indirect: ${indirectList.length} | Unaffected: ${unaffectedList.length}`;
+
+  document.getElementById('directList').innerHTML = directList.map(v => `<li>${v}</li>`).join('');
+  document.getElementById('indirectList').innerHTML = indirectList.map(v => `<li>${v}</li>`).join('');
+  document.getElementById('unaffectedList').innerHTML = unaffectedList.map(v => `<li>${v}</li>`).join('');
+}
+
+  </script>
+</body>
+</html>
