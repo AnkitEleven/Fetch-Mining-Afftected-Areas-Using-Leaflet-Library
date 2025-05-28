@@ -9,14 +9,7 @@
         "type": "Point"
       }
     },
-    {
-      "type": "Feature",
-      "properties": {},
-      "geometry": {
-        "coordinates": [86.10819379416262, 23.813849812287756],
-        "type": "Point"
-      }
-    },
+   
     {
       "type": "Feature",
       "properties": {},
