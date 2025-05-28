@@ -27,11 +27,6 @@
   color: white;
 }
 
-
-   .leaflet-marker-icon {
-    width: 34px !important;
-    height: 41px !important;
-}
   </style>
 </head>
 <body>
@@ -76,19 +71,35 @@ const activeMineIcon = L.icon({
 
 
     Promise.all([
-      fetch('district_Boundaries_geojson.json').then(res => res.json()),
+      fetch('JHARKHAND_DISTRICTS.json').then(res => res.json()),
       fetch('village_geojson.json').then(res => res.json()),
       fetch('mines_geojson.json').then(res => res.json())
     ]).then(([districtGeojson, villageGeojson, mineGeojson]) => {
 
+       // ✅ Show only Dhanbad district
+  const dhanbadOnly = { 
+    type: 'FeatureCollection',
+    features: districtGeojson.features.filter(f => f.properties.dtname === "Dhanbad")
+  };
+  const dhanbadLayer = L.geoJSON(dhanbadOnly, {
+    style: {
+      color: '#000',
+      weight: 2,
+      fillOpacity: 0.1,
+      fillColor: '#add8e6'
+    }
+  }).addTo(map);
+
+  map.fitBounds(dhanbadLayer.getBounds());
+
       // District boundary
-      L.geoJSON(districtGeojson, {
-        style: {
-          color: '#000',
-          weight: 2,
-          fillOpacity: 0
-        }
-      }).addTo(map);
+      // L.geoJSON(districtGeojson, {
+      //   style: {
+      //     color: '#000',
+      //     weight: 2,
+      //     fillOpacity: 0
+      //   }
+      // }).addTo(map);
 
       // Villages// Villages
 L.geoJSON(villageGeojson, {
